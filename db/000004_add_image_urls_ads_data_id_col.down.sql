@@ -1,0 +1,1 @@
+ALTER TABLE image_urls DROP COLUMN ads_data_id;

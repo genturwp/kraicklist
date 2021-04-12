@@ -4,36 +4,65 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/spf13/viper"
 )
 
+func init() {
+	viper.AutomaticEnv()
+}
+
+func dbConn() *pgxpool.Pool {
+	dbConnStr := viper.GetString("DB_CONN")
+	dbConfig, err := pgxpool.ParseConfig(dbConnStr)
+	if err != nil {
+		log.Fatalln("Cannot parse db connection")
+	}
+	dbConfig.MinConns = 3
+	dbConfig.MaxConns = 5
+	connPool, err := pgxpool.ConnectConfig(context.Background(), dbConfig)
+	if err != nil {
+		log.Fatalln("Failed to connect to database")
+	}
+
+	return connPool
+}
+
 func main() {
+	connPool := dbConn()
+	err := connPool.Ping(context.Background())
+	if err != nil {
+		log.Fatalln("Database connection failed")
+	}
 	// initialize searcher
-	searcher := &Searcher{}
-	err := searcher.Load("data.gz")
-	if err != nil {
-		log.Fatalf("unable to load search data due: %v", err)
-	}
-	// define http handlers
-	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
-	http.HandleFunc("/search", handleSearch(searcher))
-	// define port, we need to set it as env for Heroku deployment
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3001"
-	}
-	// start server
-	fmt.Printf("Server is listening on %s...", port)
-	err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
-	if err != nil {
-		log.Fatalf("unable to start server due: %v", err)
-	}
+	// searcher := &Searcher{}
+	// err := searcher.Load("data.gz")
+	// if err != nil {
+	// 	log.Fatalf("unable to load search data due: %v", err)
+	// }
+	// // define http handlers
+	// fs := http.FileServer(http.Dir("./static"))
+	// http.Handle("/", fs)
+	// http.HandleFunc("/search", handleSearch(searcher))
+	// // define port, we need to set it as env for Heroku deployment
+	// port := os.Getenv("PORT")
+	// if port == "" {
+	// 	port = "3001"
+	// }
+	// // start server
+	// fmt.Printf("Server is listening on %s...", port)
+	// err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
+	// if err != nil {
+	// 	log.Fatalf("unable to start server due: %v", err)
+	// }
 }
 
 func handleSearch(s *Searcher) http.HandlerFunc {

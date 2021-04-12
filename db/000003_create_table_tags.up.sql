@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS tags (
+    id BIGSERIAL NOT NULL, 
+    tag_name VARCHAR(255),
+    CONSTRAINT tags_pk PRIMARY KEY(id)
+)

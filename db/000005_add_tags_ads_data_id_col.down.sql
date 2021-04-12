@@ -1,0 +1,1 @@
+ALTER TABLE tags DROP COLUMN ads_data_id;

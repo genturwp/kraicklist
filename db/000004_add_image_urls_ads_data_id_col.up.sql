@@ -1,0 +1,1 @@
+ALTER TABLE image_urls ADD COLUMN ads_data_id BIGINT NOT NULL;
