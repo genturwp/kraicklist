@@ -2,16 +2,15 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"strings"
 
+	"challenge.haraj.com.sa/kraicklist/entities"
+	"challenge.haraj.com.sa/kraicklist/repositories"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/spf13/viper"
 )
@@ -21,6 +20,7 @@ func init() {
 }
 
 func dbConn() *pgxpool.Pool {
+	//postgresql://kraicklist:rahasia@localhost:5434/kraicklist
 	dbConnStr := viper.GetString("DB_CONN")
 	dbConfig, err := pgxpool.ParseConfig(dbConnStr)
 	if err != nil {
@@ -42,104 +42,61 @@ func main() {
 	if err != nil {
 		log.Fatalln("Database connection failed")
 	}
-	// initialize searcher
-	// searcher := &Searcher{}
-	// err := searcher.Load("data.gz")
-	// if err != nil {
-	// 	log.Fatalf("unable to load search data due: %v", err)
-	// }
-	// // define http handlers
-	// fs := http.FileServer(http.Dir("./static"))
-	// http.Handle("/", fs)
-	// http.HandleFunc("/search", handleSearch(searcher))
-	// // define port, we need to set it as env for Heroku deployment
-	// port := os.Getenv("PORT")
-	// if port == "" {
-	// 	port = "3001"
-	// }
-	// // start server
-	// fmt.Printf("Server is listening on %s...", port)
-	// err = http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
-	// if err != nil {
-	// 	log.Fatalf("unable to start server due: %v", err)
-	// }
-}
+	repository := repositories.NewRepository(connPool)
 
-func handleSearch(s *Searcher) http.HandlerFunc {
-	return http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			// fetch query string from query params
-			q := r.URL.Query().Get("q")
-			if len(q) == 0 {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("missing search query in query params"))
-				return
-			}
-			// search relevant records
-			records, err := s.Search(q)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(err.Error()))
-				return
-			}
-			// output success response
-			buf := new(bytes.Buffer)
-			encoder := json.NewEncoder(buf)
-			encoder.Encode(records)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(buf.Bytes())
-		},
-	)
-}
-
-type Searcher struct {
-	records []Record
-}
-
-func (s *Searcher) Load(filepath string) error {
-	// open file
-	file, err := os.Open(filepath)
-	if err != nil {
-		return fmt.Errorf("unable to open source file due: %v", err)
-	}
-	defer file.Close()
-	// read as gzip
-	reader, err := gzip.NewReader(file)
-	if err != nil {
-		return fmt.Errorf("unable to initialize gzip reader due: %v", err)
-	}
-	// read the reader using scanner to contstruct records
-	var records []Record
-	cs := bufio.NewScanner(reader)
-	for cs.Scan() {
-		var r Record
-		err = json.Unmarshal(cs.Bytes(), &r)
+	if _, err := os.Stat("data.json"); err == nil {
+		dataFile, err := os.Open("data.json")
 		if err != nil {
-			continue
+			log.Println("error opening data.json")
+		} else {
+			scanner := bufio.NewScanner(dataFile)
+			scanner.Split(bufio.ScanLines)
+			var adsData entities.AdsData
+			for scanner.Scan() {
+				rawTxt := scanner.Text()
+				hash := sha256.Sum256([]byte(rawTxt))
+				recHash := fmt.Sprintf("%x", hash)
+
+				json.Unmarshal([]byte(scanner.Text()), &adsData)
+				adsData.RowHash = recHash
+				adsDataObj, err := repository.AdsDataRepository.Save(context.Background(), &adsData)
+				if err != nil {
+					log.Println(err)
+				} else {
+					for _, tag := range adsData.Tags {
+						tagObj := &entities.Tag{
+							AdsDataID: adsDataObj.ID,
+							TagName:   tag,
+						}
+						_, err = repository.TagsRepository.Save(context.Background(), tagObj)
+						if err != nil {
+							log.Println(err)
+						}
+					}
+
+					for _, imgUrl := range adsData.ImageUrls {
+						imgObj := &entities.ImageUrl{
+							AdsDataID: adsDataObj.ID,
+							Image:     imgUrl,
+						}
+						_, err = repository.ImageUrlRepository.Save(context.Background(), imgObj)
+						if err != nil {
+							log.Println(err)
+						}
+					}
+				}
+
+			}
 		}
-		records = append(records, r)
 	}
-	s.records = records
-
-	return nil
-}
-
-func (s *Searcher) Search(query string) ([]Record, error) {
-	var result []Record
-	for _, record := range s.records {
-		if strings.Contains(record.Title, query) || strings.Contains(record.Content, query) {
-			result = append(result, record)
-		}
+	datas, err := repository.AdsDataRepository.SearchFullText(context.Background(), "sony")
+	if err != nil {
+		log.Println("NO RESULT")
 	}
-	return result, nil
-}
 
-type Record struct {
-	ID        int64    `json:"id"`
-	Title     string   `json:"title"`
-	Content   string   `json:"content"`
-	ThumbURL  string   `json:"thumb_url"`
-	Tags      []string `json:"tags"`
-	UpdatedAt int64    `json:"updated_at"`
-	ImageURLs []string `json:"image_urls"`
+	for _, dat := range datas {
+		fmt.Println("content = ", dat.Content)
+		fmt.Println("title = ", dat.Title)
+	}
+
 }

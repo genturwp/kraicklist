@@ -1,0 +1,1 @@
+ALTER TABLE ads_datas ADD COLUMN doc_vector TSVECTOR;

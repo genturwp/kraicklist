@@ -1,0 +1,1 @@
+ALTER TABLE ads_datas ADD CONSTRAINT ads_datas_row_hash UNIQUE(row_hash);
