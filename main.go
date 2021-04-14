@@ -9,8 +9,14 @@ import (
 	"log"
 	"os"
 
+	"challenge.haraj.com.sa/kraicklist/api"
 	"challenge.haraj.com.sa/kraicklist/entities"
 	"challenge.haraj.com.sa/kraicklist/repositories"
+	"challenge.haraj.com.sa/kraicklist/services"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/spf13/viper"
 )
@@ -43,7 +49,7 @@ func main() {
 		log.Fatalln("Database connection failed")
 	}
 	repository := repositories.NewRepository(connPool)
-
+	service := services.NewService(repository)
 	if _, err := os.Stat("data.json"); err == nil {
 		dataFile, err := os.Open("data.json")
 		if err != nil {
@@ -89,14 +95,9 @@ func main() {
 			}
 		}
 	}
-	datas, err := repository.AdsDataRepository.SearchFullText(context.Background(), "sony")
-	if err != nil {
-		log.Println("NO RESULT")
-	}
 
-	for _, dat := range datas {
-		fmt.Println("content = ", dat.Content)
-		fmt.Println("title = ", dat.Title)
-	}
-
+	app := fiber.New()
+	app.Use(cors.New(), logger.New(), recover.New())
+	api.Handler(app, service)
+	app.Listen(":9090")
 }
